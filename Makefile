@@ -1046,6 +1046,21 @@ test-unit:
 	$(GIT_FLAGS) go test -short -count=1 -timeout=10m ./...
 .PHONY: test-unit
 
+# test-coverage runs unit tests with coverage profiling and enforces a
+# minimum threshold. Run locally with: make test-coverage
+# The threshold is intentionally conservative; raise it as coverage grows.
+COVERAGE_THRESHOLD ?= 50
+test-coverage:
+	$(GIT_FLAGS) go test -short -count=1 -timeout=10m -coverprofile=coverage.out ./...
+	go tool cover -func=coverage.out | tail -1
+	@total=$$(go tool cover -func=coverage.out | tail -1 | awk '{print $$3}' | tr -d '%'); \
+	echo "Total coverage: $${total}%  (threshold: $(COVERAGE_THRESHOLD)%)"; \
+	if [ "$$(echo "$${total} < $(COVERAGE_THRESHOLD)" | bc -l)" = "1" ]; then \
+		echo "ERROR: coverage $${total}% is below threshold $(COVERAGE_THRESHOLD)%"; \
+		exit 1; \
+	fi
+.PHONY: test-coverage
+
 test-cli:
 	$(MAKE) test TEST_PACKAGES="./cli..."
 .PHONY: test-cli

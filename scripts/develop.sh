@@ -16,8 +16,15 @@ set -euo pipefail
 CODER_DEV_ACCESS_URL="${CODER_DEV_ACCESS_URL:-http://127.0.0.1:3000}"
 DEVELOP_IN_CODER="${DEVELOP_IN_CODER:-0}"
 debug=0
-DEFAULT_PASSWORD="SomeSecurePassword!"
-password="${CODER_DEV_ADMIN_PASSWORD:-${DEFAULT_PASSWORD}}"
+# Do not use a hardcoded default password. Require the caller to set
+# CODER_DEV_ADMIN_PASSWORD or generate a random one at runtime so no
+# literal credential is committed to source control.
+if [[ -z "${CODER_DEV_ADMIN_PASSWORD:-}" ]]; then
+	CODER_DEV_ADMIN_PASSWORD="$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c24)"
+	echo "Generated random dev admin password (export CODER_DEV_ADMIN_PASSWORD to override):"
+	echo "  CODER_DEV_ADMIN_PASSWORD=${CODER_DEV_ADMIN_PASSWORD}"
+fi
+password="${CODER_DEV_ADMIN_PASSWORD}"
 use_proxy=0
 multi_org=0
 
