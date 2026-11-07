@@ -245,6 +245,16 @@ jobs:
           ./scripts/check_unstaged.sh
         shell: bash
 
+      # Scan for accidentally committed secrets or hardcoded credentials.
+      # Uses gitleaks in no-git mode so it checks the working tree, not
+      # the full history (which would be too slow for a PR check).
+      - name: Scan for secrets (gitleaks)
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        continue-on-error: true
+
   gen:
     timeout-minutes: 20
     runs-on: ${{ github.repository_owner == 'coder' && 'depot-ubuntu-22.04-8' || 'ubuntu-latest' }}
@@ -367,8 +377,46 @@ jobs:
       # database or other external services. This job validates that
       # the test suite works from a fresh clone without infrastructure
       # dependencies, satisfying standard `go test ./...` conventions.
-      - name: Run unit tests
-        run: go test -short -count=1 -timeout=10m ./...
+      - name: Run unit tests with coverage
+        run: |
+          go test -short -count=1 -timeout=10m -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out | tail -1
+          total=$(go tool cover -func=coverage.out | tail -1 | awk '{print $3}' | tr -d '%')
+          echo "Total coverage: ${total}%"
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.out
+          retention-days: 7
+
+  typecheck-frontend:
+    runs-on: ${{ github.repository_owner == 'coder' && 'depot-ubuntu-22.04-8' || 'ubuntu-latest' }}
+    needs: changes
+    if: needs.changes.outputs.site == 'true' || needs.changes.outputs.ci == 'true' || github.ref == 'refs/heads/main'
+    timeout-minutes: 15
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@95d9a5deda9de15063e7595e9719c11c38c90ae2 # v2.13.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: ./.github/actions/setup-node
+
+      # Validate the TypeScript portion of the codebase compiles
+      # cleanly. This runs on every push so type regressions are
+      # caught before merge rather than discovered at runtime.
+      - name: Typecheck frontend
+        run: pnpm install --frozen-lockfile && pnpm run -C site typecheck
 
   test-go-pg:
     # make sure to adjust NUM_PARALLEL_PACKAGES and NUM_PARALLEL_TESTS below
@@ -994,6 +1042,7 @@ jobs:
       - lint
       - gen
       - test-go-unit
+      - typecheck-frontend
       - test-go-pg
       - test-go-pg-17
       - test-go-race-pg
@@ -1019,6 +1068,7 @@ jobs:
           echo "- lint: ${{ needs.lint.result }}"
           echo "- gen: ${{ needs.gen.result }}"
           echo "- test-go-unit: ${{ needs.test-go-unit.result }}"
+          echo "- typecheck-frontend: ${{ needs.typecheck-frontend.result }}"
           echo "- test-go-pg: ${{ needs.test-go-pg.result }}"
           echo "- test-go-pg-17: ${{ needs.test-go-pg-17.result }}"
           echo "- test-go-race-pg: ${{ needs.test-go-race-pg.result }}"

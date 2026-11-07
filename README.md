@@ -149,6 +149,10 @@ go mod download
 
 # Install Node dependencies (pnpm-lock.yaml lockfile ensures reproducibility)
 pnpm install
+
+# Copy the environment variable template
+cp .env.example .env
+# Edit .env to fill in any values you need (most are optional for unit tests)
 ```
 
 ### Build
