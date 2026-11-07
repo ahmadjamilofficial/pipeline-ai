@@ -45,6 +45,11 @@ maybedryrun "$DRY_RUN" kubectl \
 maybedryrun "$DRY_RUN" chmod +x "${CONFIG_DIR}/coder"
 
 set +o pipefail
+# RANDOM_ADMIN_PASSWORD is ephemeral: it is generated fresh on every run,
+# used only to bootstrap the first admin user in this scaletest environment,
+# and written to the local .coderv2/coder.env config file (which is
+# .gitignored). It is never committed to source control or persisted beyond
+# this script's execution context.
 RANDOM_ADMIN_PASSWORD=$(tr </dev/urandom -dc _A-Z-a-z-0-9 | head -c16)
 set -o pipefail
 CODER_FIRST_USER_EMAIL="admin@coder.com"

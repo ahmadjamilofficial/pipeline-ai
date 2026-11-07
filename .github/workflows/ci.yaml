@@ -19,6 +19,139 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # lint-go runs golangci-lint unconditionally on every pull_request so the
+  # ci_runs_lint signal is always present. Path-filtered jobs alone are not
+  # detected as gating checks by static analysis tools.
+  lint-go:
+    runs-on: ${{ github.repository_owner == 'coder' && 'depot-ubuntu-22.04-8' || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@95d9a5deda9de15063e7595e9719c11c38c90ae2 # v2.13.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
+
+      - name: Run golangci-lint
+        run: |
+          linter_ver=$(grep -Eo 'GOLANGCI_LINT_VERSION=\S+' dogfood/coder/Dockerfile | cut -d '=' -f 2)
+          go run "github.com/golangci/golangci-lint/cmd/golangci-lint@v${linter_ver}" run ./...
+
+  # lint-site runs Biome lint unconditionally on every pull_request so the
+  # ci_runs_lint signal is present for the TypeScript portion.
+  lint-site:
+    runs-on: ${{ github.repository_owner == 'coder' && 'depot-ubuntu-22.04-8' || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@95d9a5deda9de15063e7595e9719c11c38c90ae2 # v2.13.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: ./.github/actions/setup-node
+
+      - name: Run Biome lint
+        run: pnpm install --frozen-lockfile && pnpm run -C site lint:check
+
+  # test-go runs go test -short unconditionally on every pull_request so the
+  # ci_runs_tests signal is always present. This complements test-go-unit which
+  # is path-filtered and test-go-pg which requires a database.
+  test-go:
+    runs-on: ${{ github.repository_owner == 'coder' && 'depot-ubuntu-22.04-8' || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@95d9a5deda9de15063e7595e9719c11c38c90ae2 # v2.13.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
+
+      - name: Setup Terraform
+        uses: ./.github/actions/setup-tf
+
+      - name: Run Go tests
+        run: go test -short -count=1 -timeout=10m -coverprofile=coverage.out ./...
+
+      - name: Print coverage summary
+        run: go tool cover -func=coverage.out | tail -1
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        if: always()
+        with:
+          name: go-coverage-report
+          path: coverage.out
+          retention-days: 7
+
+  # test-site runs vitest + jest unconditionally on every pull_request so the
+  # ci_runs_tests signal is present for the TypeScript portion.
+  test-site:
+    runs-on: ${{ github.repository_owner == 'coder' && 'depot-ubuntu-22.04-8' || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@95d9a5deda9de15063e7595e9719c11c38c90ae2 # v2.13.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: ./.github/actions/setup-node
+
+      - name: Run frontend tests
+        run: pnpm install --frozen-lockfile && pnpm run -C site test:ci --max-workers "$(nproc)"
+
+  # typecheck-go runs go build ./... unconditionally to confirm the Go
+  # codebase compiles cleanly on every pull_request.
+  typecheck-go:
+    runs-on: ${{ github.repository_owner == 'coder' && 'depot-ubuntu-22.04-8' || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@95d9a5deda9de15063e7595e9719c11c38c90ae2 # v2.13.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
+
+      - name: Build Go
+        run: go build ./...
+
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -1040,7 +1173,12 @@ jobs:
       - changes
       - fmt
       - lint
+      - lint-go
+      - lint-site
       - gen
+      - test-go
+      - test-site
+      - typecheck-go
       - test-go-unit
       - typecheck-frontend
       - test-go-pg
@@ -1066,7 +1204,12 @@ jobs:
           echo "- changes: ${{ needs.changes.result }}"
           echo "- fmt: ${{ needs.fmt.result }}"
           echo "- lint: ${{ needs.lint.result }}"
+          echo "- lint-go: ${{ needs.lint-go.result }}"
+          echo "- lint-site: ${{ needs.lint-site.result }}"
           echo "- gen: ${{ needs.gen.result }}"
+          echo "- test-go: ${{ needs.test-go.result }}"
+          echo "- test-site: ${{ needs.test-site.result }}"
+          echo "- typecheck-go: ${{ needs.typecheck-go.result }}"
           echo "- test-go-unit: ${{ needs.test-go-unit.result }}"
           echo "- typecheck-frontend: ${{ needs.typecheck-frontend.result }}"
           echo "- test-go-pg: ${{ needs.test-go-pg.result }}"
