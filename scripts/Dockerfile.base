@@ -1,7 +1,7 @@
 # This is the base image used for Coder images. It's a multi-arch image that is
 # built in depot.dev for all supported architectures. Since it's built on real
 # hardware and not cross-compiled, it can have "RUN" commands.
-FROM alpine:3.23.0@sha256:51183f2cfa6320055da30872f211093f9ff1d3cf06f39a0bdb212314c5dc7375
+FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 
 # We use a single RUN command to reduce the number of layers in the image.
 # NOTE: Keep the Terraform version in sync with minTerraformVersion and
