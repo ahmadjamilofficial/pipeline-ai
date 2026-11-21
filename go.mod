@@ -173,7 +173,7 @@ require (
 	github.com/shirou/gopsutil/v4 v4.25.5
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	github.com/spf13/afero v1.15.0
-	github.com/spf13/pflag v1.0.10
+	github.com/spf13/pflag v1.1.0
 	github.com/sqlc-dev/pqtype v0.3.0
 	github.com/stretchr/testify v1.11.1
 	github.com/swaggo/http-swagger/v2 v2.0.1
